@@ -70,10 +70,12 @@ jobs:
           echo "Project folder: $PROJECT_DIR"
           ls -la "$PROJECT_DIR"
 
-      - name: Create Android export preset if missing
+      - name: Create Android export preset
         run: |
-          if [ ! -f "$PROJECT_DIR/export_presets.cfg" ]; then
-            cat > "$PROJECT_DIR/export_presets.cfg" <<'EOF'
+          if [ -f "$PROJECT_DIR/export_presets.cfg" ]; then
+            mv "$PROJECT_DIR/export_presets.cfg" "$PROJECT_DIR/export_presets.cfg.old"
+          fi
+          cat > "$PROJECT_DIR/export_presets.cfg" <<'EOF'
           [preset.0]
 
           name="Android"
@@ -98,7 +100,7 @@ jobs:
           package/signed=true
           screen/immersive_mode=true
           EOF
-          fi
+          cat "$PROJECT_DIR/export_presets.cfg"
 
       - name: Import project
         run: godot --headless --path "$PROJECT_DIR" --import || true
