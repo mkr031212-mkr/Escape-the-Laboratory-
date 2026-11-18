@@ -70,6 +70,23 @@ jobs:
           echo "Project folder: $PROJECT_DIR"
           ls -la "$PROJECT_DIR"
 
+      - name: Enable ETC2/ASTC textures for Android
+        run: |
+          python3 - <<'PY'
+          import os, re
+          p = os.environ["PROJECT_DIR"] + "/project.godot"
+          s = open(p).read()
+          key = "textures/vram_compression/import_etc2_astc"
+          if key in s:
+              s = re.sub(key + r"\s*=.*", key + "=true", s)
+          elif "[rendering]" in s:
+              s = s.replace("[rendering]\n", "[rendering]\n\n" + key + "=true\n", 1)
+          else:
+              s += "\n[rendering]\n\n" + key + "=true\n"
+          open(p, "w").write(s)
+          PY
+          grep -n "etc2_astc" "$PROJECT_DIR/project.godot"
+
       - name: Create Android export preset
         run: |
           if [ -f "$PROJECT_DIR/export_presets.cfg" ]; then
@@ -100,7 +117,18 @@ jobs:
           package/signed=true
           screen/immersive_mode=true
           EOF
-          cat "$PROJECT_DIR/export_presets.cfg"
+
+      - name: Show debug info
+        run: |
+          echo "--- ANDROID_HOME: $ANDROID_HOME"
+          ls $ANDROID_HOME
+          echo "--- cmdline-tools"; ls $ANDROID_HOME/cmdline-tools
+          echo "--- build-tools"; ls $ANDROID_HOME/build-tools
+          echo "--- platforms"; ls $ANDROID_HOME/platforms
+          echo "--- JAVA_HOME: $JAVA_HOME"
+          echo "--- templates"; ls ~/.local/share/godot/export_templates/4.3.stable
+          echo "--- editor settings"; cat ~/.config/godot/editor_settings-4.3.tres
+          echo "--- keystore"; ls -la $RUNNER_TEMP/debug.keystore
 
       - name: Import project
         run: godot --headless --path "$PROJECT_DIR" --import || true
