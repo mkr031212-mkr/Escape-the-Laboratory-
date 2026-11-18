@@ -16,20 +16,20 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install SDK packages
         run: |
-          yes | sdkmanager "platform-tools" "build-tools;34.0.0" "platforms;android-34"
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "build-tools;34.0.0" "platforms;android-34"
 
       - name: Install Godot and export templates
         run: |
           wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
           wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
           unzip -q Godot_v4.3-stable_linux.x86_64.zip
-          mv Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
-          chmod +x /usr/local/bin/godot
+          sudo mv Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
           mkdir -p ~/.local/share/godot/export_templates/4.3.stable
           unzip -q Godot_v4.3-stable_export_templates.tpz
           mv templates/* ~/.local/share/godot/export_templates/4.3.stable/
