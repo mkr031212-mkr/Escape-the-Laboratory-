@@ -7,59 +7,105 @@ on:
       - main
       - master
 
+permissions:
+  contents: read
+
 jobs:
+
   export-game:
     runs-on: ubuntu-latest
+
     container:
       image: barichello/godot-ci:4.3
 
     steps:
-      - name: Checkout repository
+
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Extract game ZIP
+      - name: Extract Game ZIP
         run: |
+          mkdir -p source
+
           ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" -print -quit)
+
           if [ -z "$ZIP_FILE" ]; then
-            echo "Game ZIP not found!"
+            echo "ERROR: Game ZIP not found!"
             exit 1
           fi
+
           unzip -q "$ZIP_FILE" -d source
 
-      - name: Export Godot game
+          ls -la source
+
+      - name: Find Godot Project
+        run: |
+          test -f source/escape_lab_android/godot_project/project.godot
+
+      - name: Install Godot Export Templates
+        run: |
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable"
+
+          wget -q \
+          https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz \
+          -O /tmp/templates.tpz
+
+          mkdir -p /tmp/godot-templates
+
+          unzip -q /tmp/templates.tpz -d /tmp/godot-templates
+
+          cp -f /tmp/godot-templates/templates/* \
+          "$HOME/.local/share/godot/export_templates/4.3.stable/"
+
+          ls -la "$HOME/.local/share/godot/export_templates/4.3.stable/"
+
+      - name: Export Godot Game
         run: |
           cd source/escape_lab_android/godot_project
-          mkdir -p ../app/src/main/assets/www
-          godot --headless --editor --import
-          godot --headless --export-release "Web" ../app/src/main/assets/www/index.html
 
-      - name: Upload Web game
+          mkdir -p ../app/src/main/assets/www
+
+          godot --headless --editor --import
+
+          godot --headless \
+          --export-release "Web" \
+          ../app/src/main/assets/www/index.html
+
+      - name: Upload Web Game
         uses: actions/upload-artifact@v4
+
         with:
           name: web-game
           path: source/escape_lab_android/app/src/main/assets/www/
+
 
   build-apk:
     needs: export-game
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Extract game ZIP
+      - name: Extract Game ZIP
         run: |
+          mkdir -p source
+
           ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" -print -quit)
+
           unzip -q "$ZIP_FILE" -d source
 
-      - name: Download Web game
+      - name: Download Web Game
         uses: actions/download-artifact@v4
+
         with:
           name: web-game
           path: source/escape_lab_android/app/src/main/assets/www/
 
       - name: Setup Java
         uses: actions/setup-java@v4
+
         with:
           distribution: temurin
           java-version: '17'
@@ -69,16 +115,19 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+
         with:
           gradle-version: '8.7'
 
       - name: Build Android APK
         run: |
           cd source/escape_lab_android
-          gradle assembleDebug --no-daemon
 
-      - name: Upload APK
+          gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload Final APK
         uses: actions/upload-artifact@v4
+
         with:
           name: EscapeTheLaboratory-APK
           path: source/escape_lab_android/app/build/outputs/apk/debug/app-debug.apk
