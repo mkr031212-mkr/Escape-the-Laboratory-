@@ -1,133 +1,69 @@
-name: Build Escape the Laboratory APK
+name: Build Android APK
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
-
-permissions:
-  contents: read
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
-
-  export-game:
+  build:
     runs-on: ubuntu-latest
-
-    container:
-      image: barichello/godot-ci:4.3
-
     steps:
+      - uses: actions/checkout@v4
 
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Extract Game ZIP
-        run: |
-          mkdir -p source
-
-          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" -print -quit)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: Game ZIP not found!"
-            exit 1
-          fi
-
-          unzip -q "$ZIP_FILE" -d source
-
-          ls -la source
-
-      - name: Find Godot Project
-        run: |
-          test -f source/escape_lab_android/godot_project/project.godot
-
-      - name: Install Godot Export Templates
-        run: |
-          mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable"
-
-          wget -q \
-          https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz \
-          -O /tmp/templates.tpz
-
-          mkdir -p /tmp/godot-templates
-
-          unzip -q /tmp/templates.tpz -d /tmp/godot-templates
-
-          cp -f /tmp/godot-templates/templates/* \
-          "$HOME/.local/share/godot/export_templates/4.3.stable/"
-
-          ls -la "$HOME/.local/share/godot/export_templates/4.3.stable/"
-
-      - name: Export Godot Game
-        run: |
-          cd source/escape_lab_android/godot_project
-
-          mkdir -p ../app/src/main/assets/www
-
-          godot --headless --editor --import
-
-          godot --headless \
-          --export-release "Web" \
-          ../app/src/main/assets/www/index.html
-
-      - name: Upload Web Game
-        uses: actions/upload-artifact@v4
-
-        with:
-          name: web-game
-          path: source/escape_lab_android/app/src/main/assets/www/
-
-
-  build-apk:
-    needs: export-game
-    runs-on: ubuntu-latest
-
-    steps:
-
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Extract Game ZIP
-        run: |
-          mkdir -p source
-
-          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" -print -quit)
-
-          unzip -q "$ZIP_FILE" -d source
-
-      - name: Download Web Game
-        uses: actions/download-artifact@v4
-
-        with:
-          name: web-game
-          path: source/escape_lab_android/app/src/main/assets/www/
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: 17
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-        with:
-          gradle-version: '8.7'
-
-      - name: Build Android APK
+      - name: Install SDK packages
         run: |
-          cd source/escape_lab_android
+          yes | sdkmanager "platform-tools" "build-tools;34.0.0" "platforms;android-34"
 
-          gradle assembleDebug --no-daemon --stacktrace
+      - name: Install Godot and export templates
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
+          unzip -q Godot_v4.3-stable_linux.x86_64.zip
+          mv Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+          mkdir -p ~/.local/share/godot/export_templates/4.3.stable
+          unzip -q Godot_v4.3-stable_export_templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/4.3.stable/
 
-      - name: Upload Final APK
+      - name: Create debug keystore
+        run: |
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey \
+            -keypass android -keystore debug.keystore -storepass android \
+            -dname "CN=Android Debug,O=Android,C=US" -validity 9999 \
+            -deststoretype pkcs12
+
+      - name: Configure Godot editor settings
+        run: |
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.3.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$GITHUB_WORKSPACE/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+
+      - name: Import project
+        run: godot --headless --import || true
+
+      - name: Export APK
+        run: |
+          mkdir -p build
+          godot --headless --export-debug "Android" build/game.apk
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
-
         with:
-          name: EscapeTheLaboratory-APK
-          path: source/escape_lab_android/app/build/outputs/apk/debug/app-debug.apk
+          name: game-apk
+          path: build/game.apk
