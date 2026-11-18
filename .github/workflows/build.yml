@@ -1,0 +1,84 @@
+name: Build Escape the Laboratory APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  export-game:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.3
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract game ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" -print -quit)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Game ZIP not found!"
+            exit 1
+          fi
+          unzip -q "$ZIP_FILE" -d source
+
+      - name: Export Godot game
+        run: |
+          cd source/escape_lab_android/godot_project
+          mkdir -p ../app/src/main/assets/www
+          godot --headless --editor --import
+          godot --headless --export-release "Web" ../app/src/main/assets/www/index.html
+
+      - name: Upload Web game
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-game
+          path: source/escape_lab_android/app/src/main/assets/www/
+
+  build-apk:
+    needs: export-game
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract game ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" -print -quit)
+          unzip -q "$ZIP_FILE" -d source
+
+      - name: Download Web game
+        uses: actions/download-artifact@v4
+        with:
+          name: web-game
+          path: source/escape_lab_android/app/src/main/assets/www/
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build Android APK
+        run: |
+          cd source/escape_lab_android
+          gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: EscapeTheLaboratory-APK
+          path: source/escape_lab_android/app/build/outputs/apk/debug/app-debug.apk
