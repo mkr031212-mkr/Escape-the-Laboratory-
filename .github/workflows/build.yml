@@ -25,6 +25,7 @@ jobs:
 
       - name: Install Godot and export templates
         run: |
+          cd $RUNNER_TEMP
           wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
           wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
           unzip -q Godot_v4.3-stable_linux.x86_64.zip
@@ -37,7 +38,7 @@ jobs:
       - name: Create debug keystore
         run: |
           keytool -keyalg RSA -genkeypair -alias androiddebugkey \
-            -keypass android -keystore debug.keystore -storepass android \
+            -keypass android -keystore $RUNNER_TEMP/debug.keystore -storepass android \
             -dname "CN=Android Debug,O=Android,C=US" -validity 9999 \
             -deststoretype pkcs12
 
@@ -47,22 +48,65 @@ jobs:
           printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\n' > ~/.config/godot/editor_settings-4.3.tres
           printf 'export/android/android_sdk_path = "%s"\n' "$ANDROID_HOME" >> ~/.config/godot/editor_settings-4.3.tres
           printf 'export/android/java_sdk_path = "%s"\n' "$JAVA_HOME" >> ~/.config/godot/editor_settings-4.3.tres
-          printf 'export/android/debug_keystore = "%s/debug.keystore"\n' "$GITHUB_WORKSPACE" >> ~/.config/godot/editor_settings-4.3.tres
+          printf 'export/android/debug_keystore = "%s/debug.keystore"\n' "$RUNNER_TEMP" >> ~/.config/godot/editor_settings-4.3.tres
           printf 'export/android/debug_keystore_user = "androiddebugkey"\n' >> ~/.config/godot/editor_settings-4.3.tres
           printf 'export/android/debug_keystore_pass = "android"\n' >> ~/.config/godot/editor_settings-4.3.tres
 
-      - name: Check export preset
+      - name: Find the Godot project
         run: |
-          ls -la
-          test -f export_presets.cfg || (echo "export_presets.cfg is missing from the repo" && exit 1)
+          if [ -f project.godot ]; then
+            PROJECT_DIR="."
+          else
+            mkdir -p project_src
+            unzip -q Escape_the_Laboratory_android.zip -d project_src
+            PROJECT_FILE=$(find project_src -name project.godot | head -n 1)
+            if [ -z "$PROJECT_FILE" ]; then
+              echo "project.godot not found in the zip"
+              exit 1
+            fi
+            PROJECT_DIR=$(dirname "$PROJECT_FILE")
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Project folder: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+
+      - name: Create Android export preset if missing
+        run: |
+          if [ ! -f "$PROJECT_DIR/export_presets.cfg" ]; then
+            cat > "$PROJECT_DIR/export_presets.cfg" <<'EOF'
+          [preset.0]
+
+          name="Android"
+          platform="Android"
+          runnable=true
+          export_filter="all_resources"
+          include_filter=""
+          exclude_filter=""
+          export_path=""
+
+          [preset.0.options]
+
+          gradle_build/use_gradle_build=false
+          architectures/armeabi-v7a=false
+          architectures/arm64-v8a=true
+          architectures/x86=false
+          architectures/x86_64=false
+          version/code=1
+          version/name="1.0"
+          package/unique_name="com.example.escapelab"
+          package/name="Escape the Laboratory"
+          package/signed=true
+          screen/immersive_mode=true
+          EOF
+          fi
 
       - name: Import project
-        run: godot --headless --import || true
+        run: godot --headless --path "$PROJECT_DIR" --import || true
 
       - name: Export APK
         run: |
           mkdir -p build
-          godot --headless --export-debug "Android" build/game.apk
+          godot --headless --path "$PROJECT_DIR" --export-debug "Android" "$GITHUB_WORKSPACE/build/game.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
